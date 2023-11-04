@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const moment = require('moment-timezone');
 
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
@@ -19,71 +20,74 @@ const userSchema = new mongoose.Schema({
     }
 });
 
-module.exports = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);
 
+// Main Game schema
+const gameSchema = new mongoose.Schema({
+    start_time: {
+        type: Date,
+    },
+    end_time: {
+        type: Date,
+    },
+    winning_color: {
+        type: String,
+    },
+    winners: {
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        bidAmount: Number,
+        winningBonus: Number
+    }
+});
 
-// const mongoose = require('mongoose');
+// Add virtual fields for start_time and end_time in IST
+gameSchema.virtual('start_time_ist').get(function() {
+    return moment(this.start_time).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+});
+gameSchema.virtual('end_time_ist').get(function() {
+    return moment(this.end_time).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+});
 
-// const userSchema = new mongoose.Schema({
-//     name: { type: String, required: true },
-//     email: {
-//         type: String,
-//         unique: true,
-//         required: true,
-//         match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email address.']
-//     },
-//     password: {
-//         type: String,
-//         required: true,
-//         minlength: 8
-//     },
-//     coinbalance:{
-//         type: Number,
-//         default: 10000
-//     }
-// });
+const Game = mongoose.model('Game', gameSchema);
 
-// const User = mongoose.model('User', userSchema);
+// User Bid schema
+const userBidSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    bid_amount: {
+        type: Number,
+    },
+    coin_type: {
+        type: String,
+    },
+    game: { 
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Game'
+    }
+});
 
-// // Main Game schema
-// const gameSchema = new mongoose.Schema({
-//     start_time: {
-//         type: Date,
-//     },
-//     end_time: {
-//         type: Date,
-//     },
-//     winning_coin: {
-//         type: String,
-//     },
-// });
+const UserBid = mongoose.model('UserBid', userBidSchema);
 
-// const Game = mongoose.model('Game', gameSchema);
+// Notifications schema 
+const notificationSchema = new mongoose.Schema({
+    title: {
+        type: String,
+    },
+    message: {
+        type: String,
+    },
+    imageUrl: String,
+    timestamp: {
+        type: Date,
+        default: Date.now
+    }
+});
 
-// // User Bid schema
-// const userBidSchema = new mongoose.Schema({
-//     user: {
-//         type: mongoose.Schema.Types.ObjectId,
-//         ref: 'User',  // Reference to the User model
-//         required: true,
-//     },
-//     bid_amount: {
-//         type: Number,
-//         required: true,
-//     },
-//     coin_type: {
-//         type: String,
-//         required: true,
-//     },
-//     game: { 
-//         type: mongoose.Schema.Types.ObjectId,
-//         ref: 'Game',  // Reference to the Game model
-//         required: true
-//     }
-// });
+const Notification = mongoose.model('Notification', notificationSchema);
 
-// const UserBid = mongoose.model('UserBid', userBidSchema);
-
-
-
-// module.exports = { User, Game, UserBid };
+module.exports = { User, Game, UserBid, Notification };
