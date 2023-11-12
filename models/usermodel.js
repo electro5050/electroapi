@@ -17,7 +17,9 @@ const userSchema = new mongoose.Schema({
     coinbalance:{
         type: Number,
         default: 10000
-    }
+    },
+    profilePictureUrl: { type: String },
+    avatar: {type: String}
 });
 
 const User = mongoose.model('User', userSchema);
@@ -90,4 +92,22 @@ const notificationSchema = new mongoose.Schema({
 
 const Notification = mongoose.model('Notification', notificationSchema);
 
-module.exports = { User, Game, UserBid, Notification };
+const profilePictureSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    imageUrl: {
+        type: String,
+        required: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now
+    }
+});
+
+const ProfilePicture = mongoose.model('ProfilePicture', profilePictureSchema);
+
+module.exports = { User, Game, UserBid, Notification,ProfilePicture };
