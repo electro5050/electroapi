@@ -4,7 +4,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const Redis = require('ioredis');
 const authMiddleware = require('./middleware/Authmiddleware');
-const { User, UserBid, Game,Notification } = require('./models/usermodel');
+const { User, UserBid, Game,Notification,ChatMessage } = require('./models/usermodel');
 require('dotenv').config()
 
 const app = express();
@@ -19,43 +19,60 @@ const aws = require('aws-sdk');
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 
-
 const s3 = new aws.S3({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: 'eu-north-1',// Turn on debug logging
+    region: 'eu-north-1'
 });
 
-
-app.post('/generate-file-path', authMiddleware, async (req, res) => {
-    const { fileType } = req.body; // The frontend should send the file type
-    const fileExtension = fileType.split('/').pop();
-    const filePath = `${req.user.userId}/${Date.now()}.${fileExtension}`; // Unique path for each file
-  
+// Endpoint to generate pre-signed URL
+app.get('/generate-presigned-url', authMiddleware, async (req, res) => {
     try {
-      const uploadUrl = `${process.env.S3_BASE_URL}/${filePath}`;
-      res.json({ filePath, uploadUrl });
+        const userId = req.user && req.user.userId;
+        if (!userId) {
+            return res.status(400).send({ message: 'Invalid User Token' });
+        }
+
+        const key = `${Date.now().toString()}-${userId}`;
+        const params = {
+            Bucket: 'electro5050',
+            Key: key,
+            Expires: 60 // Expires in 60 seconds
+        };
+
+        s3.getSignedUrl('putObject', params, (err, url) => {
+            if (err) {
+                console.error('Error generating pre-signed URL:', err);
+                return res.status(500).send({ message: 'Error generating pre-signed URL.' });
+            }
+            res.json({ preSignedUrl: url, key });
+        });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+        console.error('Error:', error);
+        res.status(500).send({ message: 'Internal Server Error' });
     }
-  });
+});
 
-// const upload =  () => multer({
-//     storage: multerS3({
-//          s3,
-//         bucket: 'electro5050',
-//         metadata: function (req, file, cb) {
-//             cb(null, {fieldName: file.fieldname});
-//         },
-//         key: function (req, file, cb) {
-//             cb(null, "image.jpeg");
-//         }
-//     })
-// }).single('profilePicture'); 
-// Use .single() with the name of your form field
+// Endpoint to update user profile picture URL after upload
+app.post('/update-profile-picture', authMiddleware, async (req, res) => {
+    try {
+        const { userId, key } = req.body;
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).send({ message: 'User not found.' });
+        }
 
+        const fileUrl = `https://${process.env.BUCKET_NAME}.s3.amazonaws.com/${key}`;
+        user.profilePictureUrl = fileUrl;
+        await user.save();
 
-// app.use(bodyParser.json());
+        res.json({ message: 'Profile picture updated successfully', profilePictureUrl: fileUrl });
+    } catch (error) {
+        console.error('Error:', error);
+        res.status(500).send({ message: 'Internal Server Error' });
+    }
+});
+
 
 
 
@@ -303,19 +320,21 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
             .populate('user')
             .exec();
 
-        const results = allBids.filter(bid => bid.game).map(bid => {
-            let win = 0;
-            if (bid.coin_type === bid.game.winning_color) {
-                console.log("winningBonus type:", typeof bid.game.winners.winningBonus);  // Check data type
-                win = Number(bid.game.winners.winningBonus);  // Convert to number
-            } 
-
-            return {
-                userId: bid.user._id,
-                username: bid.user.name,
-                win
-            };
-        });
+       
+            const results = allBids.filter(bid => bid.game && bid.user).map(bid => {
+                let win = 0;
+                if (bid.coin_type === bid.game.winning_color) {
+                    if (bid.game.winners && bid.game.winners.winningBonus) {
+                        win = Number(bid.game.winners.winningBonus);
+                    } 
+                } 
+    
+                return {
+                    userId: bid.user._id,
+                    username: bid.user.name,
+                    win
+                };
+            });
 
         console.log("Intermediate results:", results);  // Log intermediate results
 
@@ -347,12 +366,18 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
 
 app.post('/update-avatar', authMiddleware, async (req, res) => {
     const userId = req.user && req.user.userId;
-    if (!userId) return res.status(400).json({ message: 'Invalid User Token' });
+    console.log("Received update request for user ID:", userId); // Log the user ID
+
+    if (!userId) {
+        return res.status(400).json({ message: 'Invalid User Token' });
+    }
 
     const { avatarFileName } = req.body;
+    console.log("Received avatar file name:", avatarFileName); // Log the received avatar file name
 
     try {
         // Using findOneAndUpdate to update the user
+        console.log("Attempting to update avatar for user:", userId);
         const updatedUser = await User.findOneAndUpdate(
             { _id: userId }, 
             { avatar: avatarFileName }, 
@@ -360,20 +385,22 @@ app.post('/update-avatar', authMiddleware, async (req, res) => {
         );
 
         if (!updatedUser) {
+            console.log("User not found for ID:", userId); // Log if user is not found
             return res.status(404).json({ message: 'User not found' });
         }
 
-        console.log("Avatar updated successfully for user:", updatedUser.name);
+        console.log("Avatar updated successfully for user:", updatedUser.name); // Log the successful update
         res.status(200).json({ message: 'Avatar updated successfully', updatedUser });
     } catch (error) {
-        console.error('Error updating user avatar:', error);
+        console.error('Error updating user avatar:', error); // Log any errors
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 });
 
+
+
   
 app.get('/users', authMiddleware, async (req, res) => {
-    // Assuming authMiddleware attaches the user's ID to the request
     const userId = req.user && req.user.userId;
     if (!userId) {
         return res.status(400).json({ message: 'Invalid User Token' });
@@ -385,12 +412,13 @@ app.get('/users', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Send back user details
+        // Send back user details including the avatar filename
         res.json({
             id: user._id,
             name: user.name,
             email: user.email,
-            // Add other relevant user details here
+            avatar: user.avatar,
+            profilePictureUrl: user.profilePictureUrl, 
         });
     } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -399,67 +427,67 @@ app.get('/users', authMiddleware, async (req, res) => {
 });
 
 
+// Endpoint to update user's profile picture URL
+app.post('/update-profile-picture', authMiddleware, async (req, res) => {
+    const { userId, imageUrl } = req.body;
+    try {
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).send({ message: 'User not found.' });
+      }
+      user.profilePictureUrl = imageUrl;
+      await user.save();
+      res.json({ message: 'Profile picture updated successfully' });
+    } catch (error) {
+      console.error('Error updating profile picture:', error);
+      res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+  });
+
+  app.post('/send-message', authMiddleware, async (req, res) => {
+    try {
+        const senderId = req.user && req.user.userId;
+        const { message } = req.body;
+
+        if (!message) {
+            return res.status(400).json({ message: 'Message content is required' });
+        }
+
+        const newMessage = new ChatMessage({
+            sender: senderId,
+            message: message,
+            // Add other fields if necessary
+        });
+
+        await newMessage.save();
+        res.status(201).json({ message: 'Message sent successfully', newMessage });
+    } catch (error) {
+        console.error('Error sending message:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+});
 
 
-// app.post('/upload-profile-picture', authMiddleware, (req, res) => {
-//     console.log("File received:", req.file)
-//     upload(req, res, async function (err) {
-//         if (err instanceof multer.MulterError) {
-//             // Handle errors related to multer
-//             console.error('MulterError:', err);
-//             return res.status(500).json({ message: 'Multer error', details: err.message });
-//         } else if (err) {
-//             // Handle unknown errors
-//             console.error('Unknown Upload Error:', err);
-//             return res.status(500).json({ message: 'Unknown upload error', details: err.message });
-//         }
-        
-//         // If the authMiddleware did not attach user info to the request, return an error
-//         const userId = req.user && req.user.userId;
-//         if (!userId) {
-//             console.error('Authentication Error: User info not found in request.');
-//             return res.status(400).send({ message: 'Invalid User Token' });
-//         }
+app.get('/get-messages', authMiddleware, async (req, res) => {
+    try {
+        // Modify the query as needed, e.g., filter by chat room or recipient
+        const messages = await ChatMessage.find()
+            .populate('sender', 'name') // Optional: populate sender details
+            .sort({ timestamp: -1 });   // Sort by timestamp, newest first
 
-//         // If no file was uploaded, return an error
-//         if (!req.file) {
-//             console.error('Upload Error: No file uploaded.');
-//             return res.status(400).send({ message: 'No file uploaded.' });
-//         }
+        res.json(messages);
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+});
 
-//         try {
-//             // Use the userId to find the user and update their profile picture URL
-//             const user = await User.findById(userId);
-//             if (!user) {
-//                 console.error('User Not Found Error: User not found with provided ID.');
-//                 return res.status(404).send({ message: 'User not found.' });
-//             }
-//             user.profilePictureUrl = req.file.location;
-//             await user.save(); // Make sure to await the save operation
-//             console.log('Profile picture uploaded successfully:', req.file.location);
-//             res.json({ message: 'Profile picture uploaded successfully', profilePictureUrl: req.file.location });
-//         } catch (error) {
-//             console.error('Error uploading profile picture:', error);
-//             res.status(500).json({ message: 'Internal Server Error', details: error.message, stack: error.stack });
-//         }
-//     });
-// });
+  
 
-
-
-// Catch-all error handler
 app.use((error, req, res, next) => {
     console.error('Unhandled Error:', error);
     res.status(500).json({ message: 'Unhandled error', details: error.message, stack: error.stack });
 });
-
-
-
-
-
-
-
-
 
 app.listen(port, '192.168.29.85', () => {
     console.log(`Server running at http://192.168.29.85:${port}/`);
