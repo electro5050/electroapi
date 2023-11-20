@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const moment = require('moment-timezone');
 
+
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
     email: {
@@ -8,6 +9,9 @@ const userSchema = new mongoose.Schema({
         unique: true,
         required: true,
         match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email address.']
+    },
+    userId: {
+        type: String,
     },
     password: {
         type: String,
@@ -18,9 +22,32 @@ const userSchema = new mongoose.Schema({
         type: Number,
         default: 10000
     },
-    profilePictureUrl: { type: String },
-    avatar: {type: String}
+    profilePictureUrl: { type: String }
 });
+
+userSchema.pre('save', function (next) {
+    // Check if userId is not already set
+    if (!this.userId) {
+        // Extract the first 10 letters of the email without the domain
+        const emailPrefix = this.email.slice(0, this.email.indexOf('@')).slice(0, 5);
+
+        // Generate a unique identifier using uuidv4
+        const uniqueId = uuidv4().slice(-4);
+
+        // Combine the two parts to form the userId
+        this.userId = emailPrefix + uniqueId;
+    }
+
+    next();
+});
+
+userSchema.virtual('UserId').get(function () {
+    const emailPrefix =  this.email  ?  this.email.slice(0, this.email.indexOf('@')).slice(0, 10) : 'unknown';
+    const idSuffix = this._id.toString().slice(-5);
+    return emailPrefix + idSuffix;
+});
+
+userSchema.set('toJSON', { virtuals: true });
 
 const User = mongoose.model('User', userSchema);
 

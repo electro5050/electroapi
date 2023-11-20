@@ -366,21 +366,17 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
 
 app.post('/update-avatar', authMiddleware, async (req, res) => {
     const userId = req.user && req.user.userId;
-    console.log("Received update request for user ID:", userId); // Log the user ID
 
     if (!userId) {
         return res.status(400).json({ message: 'Invalid User Token' });
     }
-
     const { avatarFileName } = req.body;
-    console.log("Received avatar file name:", avatarFileName); // Log the received avatar file name
-
     try {
         // Using findOneAndUpdate to update the user
         console.log("Attempting to update avatar for user:", userId);
         const updatedUser = await User.findOneAndUpdate(
             { _id: userId }, 
-            { avatar: avatarFileName }, 
+            { profilePictureUrl: avatarFileName }, 
             { new: true, runValidators: true }
         );
 
@@ -389,7 +385,6 @@ app.post('/update-avatar', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        console.log("Avatar updated successfully for user:", updatedUser.name); // Log the successful update
         res.status(200).json({ message: 'Avatar updated successfully', updatedUser });
     } catch (error) {
         console.error('Error updating user avatar:', error); // Log any errors
@@ -412,13 +407,14 @@ app.get('/users', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
+            console.log(user);
         // Send back user details including the avatar filename
         res.json({
             id: user._id,
             name: user.name,
             email: user.email,
-            avatar: user.avatar,
             profilePictureUrl: user.profilePictureUrl, 
+            userId: user.userId
         });
     } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -472,15 +468,49 @@ app.get('/get-messages', authMiddleware, async (req, res) => {
     try {
         // Modify the query as needed, e.g., filter by chat room or recipient
         const messages = await ChatMessage.find()
-            .populate('sender', 'name') // Optional: populate sender details
-            .sort({ timestamp: -1 });   // Sort by timestamp, newest first
-
+            .populate({
+                path: 'sender',
+                select: 'name profilePictureUrl', 
+            })
+            .sort({ timestamp: 1 });   // Sort by timestamp, newest first
+        console.log(messages);
         res.json(messages);
     } catch (error) {
         console.error('Error fetching messages:', error);
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
     }
 });
+
+
+app.post('/change-passsword', authMiddleware, async (req, res) => {
+    try {
+      const { current_password, new_password } = req.body;
+      const userId = req.user.userId;
+      const user = await User.findById(userId);
+  
+      if (!user) {
+        return res.status(400).json({ message: "Invalid email or password." });
+      }
+  
+      // Check password
+      const isMatch = await bcrypt.compare(current_password, user.password);
+  
+      if (!isMatch) {
+        return res.status(400).json({ message: "Password Incorrect" });
+      }
+  
+      const saltRounds = 12;
+      const hashedPassword = await bcrypt.hash(new_password, saltRounds);
+
+    // user table update wit hhashed password and jwt logot
+  
+        return res.status(200).json({ message: "changed pasworsd" });
+    
+    } catch (err) {
+      console.error("Error during login:", err);
+      res.status(500).json({ message: "Server error." });
+    }
+  });
 
   
 
@@ -489,6 +519,6 @@ app.use((error, req, res, next) => {
     res.status(500).json({ message: 'Unhandled error', details: error.message, stack: error.stack });
 });
 
-app.listen(port, '192.168.29.85', () => {
-    console.log(`Server running at http://192.168.29.85:${port}/`);
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Server running at localhost:${port}/`);
 });
