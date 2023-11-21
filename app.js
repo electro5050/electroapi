@@ -114,7 +114,32 @@ app.post('/switch', authMiddleware, async (req, res) => {
     
     const message = JSON.stringify({ action: 'switch', userId });
 
-    if (await publishToRedis('test', message)) {
+    const { gameId } = req.body;
+    
+    const userIdObj = new  mongoose.Types.ObjectId(userId);
+    const gameIdObj = new  mongoose.Types.ObjectId(gameId);
+
+    UserBid.findOne({ user: userIdObj, game: gameIdObj})
+        .then((userBid) => {
+            if (userBid) {
+
+            const currentButtonType = userBid.coin_type;
+            const updatedButtonType = currentButtonType === "gold" ? "silver" : "gold"; 
+
+            return UserBid.updateOne(
+                { user: userIdObj, game: gameIdObj },
+                { $set: { coin_type: updatedButtonType } }
+            );
+            }
+        })
+        .then((result) => {
+        })
+        .catch((err) => {
+            console.error('Error updating document:', err);
+    });
+
+
+    if (await publishToRedis('game_queue', message)) {
         res.status(200).json({ message: 'Switched room successfully' });
     } else {
         res.status(500).json({ message: 'Error switching room' });
@@ -123,33 +148,49 @@ app.post('/switch', authMiddleware, async (req, res) => {
 
 app.post('/bid', authMiddleware, async (req, res) => {
     const userId = req.user && req.user.userId;
-    const { gameId } = req.body;  // Extract gameId from the request body
+    // const { gameId } = req.body;  // Extract gameId from the request body
     if (!userId) return res.status(400).send('Invalid User Token');
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const { coinCount, buttonType } = req.body;
+    const { gameId, coinCount, buttonType } = req.body;
+
     if (user.coinbalance < coinCount) return res.status(400).json({ message: 'Not enough coins to bid' });
 
     const currentGame = await Game.findById(gameId);
     if (!currentGame) return res.status(404).json({ message: 'Game not found' });
 
-    const newBid = new UserBid({
-        user: userId,
-        bid_amount: coinCount,
-        coin_type: buttonType,
-        game: currentGame._id
-    });
+    UserBid.findOne({ user: userId, game: currentGame._id })
+    .then(existingBid => {
+        if (existingBid) {
+            // Bid already exists, update bid_amount
+            existingBid.bid_amount += coinCount;
+             return existingBid.save();
+        } else {
+            // Bid does not exist, create a new one
+            const newBid = new UserBid({
+                user: userId,
+                bid_amount: coinCount,
+                coin_type: buttonType,
+                game: currentGame._id
+            });
 
-    await newBid.save();
+            return newBid.save();
+        }
+    })
+    .then(() => {
+    })
+    .catch(error => {
+        // Handle any errors
+        console.error(error);
+    });
     
     user.coinbalance -= coinCount;
     await user.save();
+    const message = JSON.stringify({ coinCount, buttonType, userId, username: user.userId });
 
-    const message = JSON.stringify({ coinCount, buttonType, userId });
-
-    if (await publishToRedis('test', message)) {
+    if (await publishToRedis('game_queue', message)) {
         res.status(200).json({ message: 'Bid received successfully', coinbalance: user.coinbalance });
     } else {
         res.status(500).json({ message: 'Error publishing to Redis' });
@@ -248,30 +289,21 @@ app.get('/usergamehistory', authMiddleware, async (req, res) => {
 
     // 1. Logging the user ID
     const userId = req.user && req.user.userId;
-    console.log("User ID:", userId); 
     if (!userId) return res.status(400).json({ message: 'Invalid User Token' });
 
     const user = await User.findById(userId).exec();
     if (!user) return res.status(404).json({ message: 'User not found' });
-    console.log("User's Name:", user.name);
 
     try {
         // 2. Fetch and log the user bids
         const bids = await UserBid.find({ user: userId })
             .populate('game')
             .exec();
-        console.log("Fetched bids:", bids);
 
         const result = bids.filter(bid => bid.game).map(bid => {
             let win = 0;
             let loss = 0;
         
-            // 3. Logging bid details for debugging
-            console.log("Processing bid:", bid);
-            console.log("Bid's coin type:", bid.coin_type);
-            console.log('bid game:', bid.game)
-            console.log('winners' , bid.game.winners)
-            console.log('winning color',bid.game.winning_color)
         
                 if (bid.game.winners.winningBonus) {
                     win = bid.game.winners.winningBonus; // Or some other logic to decide the win amount based on winningBonus
@@ -289,9 +321,6 @@ app.get('/usergamehistory', authMiddleware, async (req, res) => {
             };
         });
         
-
-        // 4. Log the final result
-        console.log("Result:", result);
         res.status(200).json(result);
 
     } catch (error) {
@@ -306,12 +335,10 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
     
     // 1. Authenticate and get user details
     const userId = req.user && req.user.userId;
-    console.log("Authenticated User ID:", userId); 
     if (!userId) return res.status(400).json({ message: 'Invalid User Token' });
 
     const authUser = await User.findById(userId).exec();
     if (!authUser) return res.status(404).json({ message: 'Authenticated user not found' });
-    console.log("Authenticated User's Name:", authUser.name);
     
     try {
         // 2. Fetch all bids and log them
@@ -336,8 +363,6 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
                 };
             });
 
-        console.log("Intermediate results:", results);  // Log intermediate results
-
         const totalWinningAmounts = results.reduce((acc, curr) => {
             if (!acc[curr.userId]) {
                 acc[curr.userId] = {
@@ -349,12 +374,8 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
             return acc;
         }, {});
 
-        console.log("Total winnings by user:", totalWinningAmounts);  // Log total winnings by user
-
         const sortedUsersByWinnings = Object.values(totalWinningAmounts).sort((a, b) => b.totalWin - a.totalWin);
 
-        // 3. Log the final result
-        console.log("Sorted Users by Winnings:", sortedUsersByWinnings);
         res.status(200).json(sortedUsersByWinnings);
 
     } catch (error) {
@@ -372,8 +393,6 @@ app.post('/update-avatar', authMiddleware, async (req, res) => {
     }
     const { avatarFileName } = req.body;
     try {
-        // Using findOneAndUpdate to update the user
-        console.log("Attempting to update avatar for user:", userId);
         const updatedUser = await User.findOneAndUpdate(
             { _id: userId }, 
             { profilePictureUrl: avatarFileName }, 
@@ -381,7 +400,6 @@ app.post('/update-avatar', authMiddleware, async (req, res) => {
         );
 
         if (!updatedUser) {
-            console.log("User not found for ID:", userId); // Log if user is not found
             return res.status(404).json({ message: 'User not found' });
         }
 
@@ -407,14 +425,14 @@ app.get('/users', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-            console.log(user);
         // Send back user details including the avatar filename
         res.json({
             id: user._id,
-            name: user.name,
-            email: user.email,
-            profilePictureUrl: user.profilePictureUrl, 
-            userId: user.userId
+            ...user.toObject()
+            // name: user.name,
+            // email: user.email,
+            // profilePictureUrl: user.profilePictureUrl, 
+            // userId: user.userId
         });
     } catch (error) {
         console.error('Error fetching user profile:', error);
@@ -443,7 +461,7 @@ app.post('/update-profile-picture', authMiddleware, async (req, res) => {
   app.post('/send-message', authMiddleware, async (req, res) => {
     try {
         const senderId = req.user && req.user.userId;
-        const { message } = req.body;
+        const { message, type } = req.body;
 
         if (!message) {
             return res.status(400).json({ message: 'Message content is required' });
@@ -452,6 +470,7 @@ app.post('/update-profile-picture', authMiddleware, async (req, res) => {
         const newMessage = new ChatMessage({
             sender: senderId,
             message: message,
+            type: type
             // Add other fields if necessary
         });
 
@@ -473,7 +492,6 @@ app.get('/get-messages', authMiddleware, async (req, res) => {
                 select: 'name profilePictureUrl', 
             })
             .sort({ timestamp: 1 });   // Sort by timestamp, newest first
-        console.log(messages);
         res.json(messages);
     } catch (error) {
         console.error('Error fetching messages:', error);

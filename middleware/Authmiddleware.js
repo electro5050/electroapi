@@ -18,7 +18,6 @@ function authMiddleware(req, res, next) {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
-        console.log("Decoded Token:", decoded);
         next(); // Move to the next middleware/route handler
     } catch (error) {
         console.error('Token verification error:', error);

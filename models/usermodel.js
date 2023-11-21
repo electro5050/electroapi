@@ -148,6 +148,9 @@ const chatMessageSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    type: {
+        type: String,
+    },
     timestamp: {
         type: Date,
         default: Date.now
