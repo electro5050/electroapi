@@ -77,7 +77,7 @@ app.post('/update-profile-picture', authMiddleware, async (req, res) => {
 
 
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://hrelectroweb:electro@cluster0.yru2wau.mongodb.net/?retryWrites=true&w=majority&appName=AtlasApp'; // Moved to environment variable
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://electra:electra5050@docdb-2023-11-21-09-53-39.cluster-cp0ip1rsquov.ap-south-1.docdb.amazonaws.com:27017/?tls=true&tlsCAFile=global-bundle.pem&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false'; // Moved to environment variable
 mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true });
 
 mongoose.connection.on('connected', () => {
@@ -88,7 +88,7 @@ mongoose.connection.on('error', (err) => {
     console.error('Failed to connect to MongoDB:', err);
 });
 
-const redisClient = new Redis('redis://localhost:6379/0');
+const redisClient = new Redis('redis://electra-0001-001.dw3abo.0001.aps1.cache.amazonaws.com:6379/0');
 
 redisClient.on('error', err => {
     console.error('There was an error with the Redis client:', err);
