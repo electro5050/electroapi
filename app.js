@@ -304,9 +304,8 @@ app.get('/usergamehistory', authMiddleware, async (req, res) => {
             let win = 0;
             let loss = 0;
         
-        
-                if (bid.game.winners.winningBonus) {
-                    win = bid.game.winners.winningBonus; // Or some other logic to decide the win amount based on winningBonus
+                if (bid.coin_type === bid.game.winning_color) {
+                    win = 2 * bid.bid_amount// Or some other logic to decide the win amount based on winningBonus
                 } else {
                     loss = bid.bid_amount;
                 }
@@ -347,18 +346,17 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
             .populate('user')
             .exec();
 
-       
+
             const results = allBids.filter(bid => bid.game && bid.user).map(bid => {
                 let win = 0;
                 if (bid.coin_type === bid.game.winning_color) {
-                    if (bid.game.winners && bid.game.winners.winningBonus) {
-                        win = Number(bid.game.winners.winningBonus);
-                    } 
+                    win = 2*bid.bid_amount;
                 } 
     
                 return {
                     userId: bid.user._id,
                     username: bid.user.name,
+                    profilePictureUrl: bid.user.profilePictureUrl,
                     win
                 };
             });
@@ -367,6 +365,7 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
             if (!acc[curr.userId]) {
                 acc[curr.userId] = {
                     username: curr.username,
+                    profilePictureUrl: curr.profilePictureUrl,
                     totalWin: 0  // Make sure this is a number
                 };
             }
@@ -376,7 +375,7 @@ app.get('/allusersgamehistory', authMiddleware, async (req, res) => {
 
         const sortedUsersByWinnings = Object.values(totalWinningAmounts).sort((a, b) => b.totalWin - a.totalWin);
 
-        res.status(200).json(sortedUsersByWinnings);
+        res.status(200).json(sortedUsersByWinnings.slice(0, 10));
 
     } catch (error) {
         // 4. Enhanced error logging
