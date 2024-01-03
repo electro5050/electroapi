@@ -89,6 +89,8 @@ mongoose.connection.on('error', (err) => {
 });
 
 const redisClient = new Redis('redis://electra-0001-001.dw3abo.0001.aps1.cache.amazonaws.com:6379/0');
+// const redisClient = new Redis('redis://localhost:6379/0');
+
 
 redisClient.on('error', err => {
     console.error('There was an error with the Redis client:', err);
@@ -316,7 +318,8 @@ app.get('/usergamehistory', authMiddleware, async (req, res) => {
                 bidAmount: bid.bid_amount,
                 win,
                 loss,
-                startTime: bid.game.start_time
+                startTime: bid.game.start_time,
+                Room: bid.coin_type
             };
         });
         
@@ -529,6 +532,55 @@ app.post('/change-passsword', authMiddleware, async (req, res) => {
     }
   });
 
+
+  // api to get winner and loser data 
+  app.get('/game-outcome', authMiddleware, async (req, res) => {
+    const userId = req.user && req.user.userId;
+    const { gameId } = req.query;
+
+    console.log("UserId:", userId); // Debug log
+    console.log("GameId:", gameId); 
+
+    if (!userId || !gameId) {
+        return res.status(400).json({ message: 'User ID and Game ID are required' });
+    }
+
+    try {
+        const userBid = await UserBid.findOne({ user: userId, game: gameId }).exec();
+        if (!userBid) {
+            return res.json({ participated: false });
+        }
+
+        const game = await Game.findById(gameId).exec();
+        if (!game) {
+            return res.status(404).json({ message: 'Game not found' });
+        }
+
+        const gameEnded = game.hasEnded;
+        console.log('gameEnded',gameEnded)
+
+        if (!gameEnded) {
+            return res.json({ participated: true, gameInProgress: true });
+        }
+
+        // Perform calculations only if the game has ended
+        const won = game.winning_color === userBid.coin_type;
+        const outcome = won ? 'win' : 'loss';
+        const amount = userBid.bid_amount;
+        const winningAmount = won ? amount * 2 : 0;
+        const losingAmount = won ? 0 : amount;
+
+        res.json({ participated: true, outcome, winningAmount, losingAmount, gameEnded });
+    } catch (error) {
+        console.error('Error fetching game outcome:', error);
+        res.status(500).json({ message: 'Internal Server Error', error: error.message });
+    }
+});
+
+
+
+
+
   
 
 app.use((error, req, res, next) => {
@@ -539,3 +591,5 @@ app.use((error, req, res, next) => {
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running at localhost:${port}/`);
 });
+
+

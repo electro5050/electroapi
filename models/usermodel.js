@@ -69,7 +69,11 @@ const gameSchema = new mongoose.Schema({
         },
         bidAmount: Number,
         winningBonus: Number
-    }
+    },
+    hasEnded: {
+        type: Boolean,
+        default: false
+    },
 });
 
 // Add virtual fields for start_time and end_time in IST
