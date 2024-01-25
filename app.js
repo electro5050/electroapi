@@ -88,8 +88,8 @@ mongoose.connection.on('error', (err) => {
     console.error('Failed to connect to MongoDB:', err);
 });
 
-// const redisClient = new Redis('redis://electra-0001-001.dw3abo.0001.aps1.cache.amazonaws.com:6379/0');
-const redisClient = new Redis('redis://localhost:6379/0');
+const redisClient = new Redis('redis://electra-0001-001.dw3abo.0001.aps1.cache.amazonaws.com:6379/0');
+// const redisClient = new Redis('redis://localhost:6379/0');
 
 
 redisClient.on('error', err => {
